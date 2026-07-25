@@ -36,6 +36,7 @@
       };
     in
     rec {
+      # The binary built from this flake.
       packages.${system}.default = naersk'.buildPackage rec {
         src = ./.;
         nativeBuildInputs = with pkgs; [
@@ -43,6 +44,7 @@
         RUST_SRC_PATH = pkgs.rustPlatform.rustLibSrc;
       };
 
+      # The devshell to use when developing in this flake.
       devShells.${system}.default = pkgs.mkShell {
         nativeBuildInputs =
           with pkgs;
