@@ -1,7 +1,6 @@
 use clap::Parser;
 use rumqttc::{AsyncClient, MqttOptions, QoS};
 use std::{path::PathBuf, time::Duration};
-use tokio::{task, time};
 
 #[derive(Parser, Debug)]
 #[command(version)]
@@ -27,17 +26,10 @@ async fn main() {
     mqttoptions.set_credentials(args.username, password.trim());
 
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 100);
-    client.subscribe("bms/test", QoS::AtMostOnce).await.unwrap();
-
-    task::spawn(async move {
-        for i in 0..10 {
-            client
-                .publish("bms/test", QoS::AtLeastOnce, false, vec![i; i as usize])
-                .await
-                .unwrap();
-            time::sleep(Duration::from_millis(100)).await;
-        }
-    });
+    client
+        .subscribe("homeassistant/#", QoS::AtMostOnce)
+        .await
+        .unwrap();
 
     loop {
         match eventloop.poll().await {
