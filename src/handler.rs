@@ -1,5 +1,7 @@
-use async_channel::Receiver;
-use rumqttc::Event;
+use async_channel::{Receiver, RecvError};
+use rumqttc::{Event, Packet};
+
+use crate::types::Message;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -20,10 +22,17 @@ impl HandlerArgs {
     }
 
     /// Receive an event from the queue, handling queue shutdown.
-    pub async fn recv(&self) -> Result<Event> {
-        match self.events.recv().await {
-            Ok(e) => Ok(e),
-            _ => Err(Error::Shutdown),
+    pub async fn recv(&self) -> Result<Message> {
+        loop {
+            match self.events.recv().await {
+                Ok(Event::Incoming(Packet::Publish(p))) => {
+                    if let Ok(m) = Message::deserialize(p.payload) {
+                        return Ok(m);
+                    }
+                }
+                Ok(_) => {}
+                Err(RecvError) => return Err(Error::Shutdown),
+            }
         }
     }
 }

@@ -8,6 +8,7 @@ impl crate::handler::Handler for Handler {
     async fn handle(&self, args: HandlerArgs) -> Result<()> {
         loop {
             let event = args.recv().await?;
+
             println!("{:?}", event);
         }
     }

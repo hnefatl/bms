@@ -1,12 +1,13 @@
 use anyhow::bail;
 use log::error;
-use rumqttc::{AsyncClient, MqttOptions, QoS};
+use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
 use std::time::Duration;
 use tokio::task::JoinSet;
 
 mod args;
 use args::*;
 mod handler;
+mod types;
 use crate::handler::{Handler, HandlerArgs};
 
 mod handlers {
@@ -40,6 +41,11 @@ async fn main() -> anyhow::Result<()> {
         .subscribe("homeassistant/#", QoS::AtMostOnce)
         .await
         .unwrap();
+
+    if let Some(regex) = args.sniff_topics {
+        sniffer(regex, eventloop).await;
+        return Ok(());
+    }
 
     let (sender, receiver) = async_channel::bounded(256);
     let handler_args = HandlerArgs::new(receiver);
@@ -80,6 +86,28 @@ async fn handler_watcher(mut joinset: JoinSet<handler::Result<()>>) {
             Ok(Err(handler::Error::Shutdown)) => {}
             Ok(Err(e)) => error!("handler failed: {}", e),
             Err(e) => error!("handler failed to join: {}", e),
+        }
+    }
+}
+
+async fn sniffer(regex: regex::Regex, mut eventloop: EventLoop) {
+    loop {
+        match eventloop.poll().await {
+            Ok(Event::Incoming(Packet::Publish(p))) => {
+                if !regex.is_match(&p.topic) {
+                    continue;
+                }
+
+                match serde_json::from_slice::<serde_json::Value>(&p.payload) {
+                    Ok(s) => println!("topic '{}', payload: {}", p.topic, s),
+                    Err(e) => println!("decoding error in '{:?}': {}", p.payload, e),
+                }
+            }
+            Ok(e) => println!("{:?}", e),
+            Err(e) => {
+                println!("error: {}", e);
+                return;
+            }
         }
     }
 }
