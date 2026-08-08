@@ -1,6 +1,5 @@
-use anyhow::bail;
 use log::error;
-use rumqttc::{AsyncClient, Event, EventLoop, MqttOptions, Packet, QoS};
+use rumqttc::{AsyncClient, ConnectionError, Event, EventLoop, MqttOptions, Packet, QoS};
 use std::time::Duration;
 use tokio::task::JoinSet;
 
@@ -24,31 +23,29 @@ const HANDLERS: [&'static dyn Handler; 2] = [
 async fn main() -> anyhow::Result<()> {
     env_logger::init();
     let args = args::Args::parse();
-    let password = match std::fs::read_to_string(args.password_file) {
+    let password = match std::fs::read_to_string(&args.password_file) {
         Ok(p) => p,
         Err(e) => {
-            error!("Failed to read password file: {}", e);
-            bail!("a");
+            error!("Failed to read password file '{}': {}", args.password_file.display(), e);
+            Err(e)?
         }
     };
 
     let mut mqttoptions = MqttOptions::new("bms", args.host, args.port);
     mqttoptions.set_keep_alive(Duration::from_secs(5));
     mqttoptions.set_credentials(args.username, password.trim());
+    mqttoptions.set_max_packet_size(1_000_000,1_000_000);
 
     let (client, mut eventloop) = AsyncClient::new(mqttoptions, 256);
-    client
-        .subscribe("homeassistant/#", QoS::AtMostOnce)
-        .await
-        .unwrap();
 
     if let Some(regex) = args.sniff_topics {
+        client.subscribe(".*", QoS::AtLeastOnce).await?;
         sniffer(regex, eventloop).await;
         return Ok(());
     }
 
     let (sender, receiver) = async_channel::bounded(256);
-    let handler_args = HandlerArgs::new(receiver);
+    let handler_args = HandlerArgs::new(client, receiver);
 
     let mut joinset = JoinSet::new();
     for handler in HANDLERS {
@@ -66,7 +63,12 @@ async fn main() -> anyhow::Result<()> {
                 Ok(event) => {
                     sender.send(event).await.expect("ungraceful sender closure");
                 }
+                Err(ConnectionError::MqttState(e)) => {
+                    // This is usually a transient error.
+                    error!("MQTT state error: {}", e);
+                }
                 Err(e) => {
+                    // This is usually a permanent error.
                     error!("MQTT error: {}", e);
                     tokio::time::sleep(Duration::from_secs(5)).await;
                 }
@@ -98,15 +100,17 @@ async fn sniffer(regex: regex::Regex, mut eventloop: EventLoop) {
                     continue;
                 }
 
+                println!("topic '{}'", p.topic);
                 match serde_json::from_slice::<serde_json::Value>(&p.payload) {
-                    Ok(s) => println!("topic '{}', payload: {}", p.topic, s),
-                    Err(e) => println!("decoding error in '{:?}': {}", p.payload, e),
+                    Ok(s) => println!("  payload: {}", s),
+                    Err(e) => println!("  decoding error in '{:?}': {}", p.payload, e),
                 }
+                println!();
             }
+            Ok(Event::Outgoing(_)) => {},
             Ok(e) => println!("{:?}", e),
             Err(e) => {
                 println!("error: {}", e);
-                return;
             }
         }
     }

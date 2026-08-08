@@ -1,5 +1,6 @@
 use async_channel::{Receiver, RecvError};
-use rumqttc::{Event, Packet};
+use bytes::Bytes;
+use rumqttc::{AsyncClient, Event, Packet};
 
 use crate::types::Message;
 
@@ -14,21 +15,27 @@ pub type Result<T> = core::result::Result<T, Error>;
 
 #[derive(Clone)]
 pub struct HandlerArgs {
+    pub client: AsyncClient,
     events: Receiver<Event>,
 }
 impl HandlerArgs {
-    pub fn new(events: Receiver<Event>) -> Self {
-        HandlerArgs { events }
+    pub fn new(client: AsyncClient, events: Receiver<Event>) -> Self {
+        HandlerArgs { client, events }
     }
 
     /// Receive an event from the queue, handling queue shutdown.
     pub async fn recv(&self) -> Result<Message> {
         loop {
+            if let Ok(m) = Message::deserialize(self.recv_raw().await?) {
+                return Ok(m);
+            }
+        }
+    }
+    pub async fn recv_raw(&self) -> Result<Bytes> {
+        loop {
             match self.events.recv().await {
                 Ok(Event::Incoming(Packet::Publish(p))) => {
-                    if let Ok(m) = Message::deserialize(p.payload) {
-                        return Ok(m);
-                    }
+                    return Ok(p.payload);
                 }
                 Ok(_) => {}
                 Err(RecvError) => return Err(Error::Shutdown),
