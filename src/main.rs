@@ -6,6 +6,7 @@ use tokio::task::JoinSet;
 mod args;
 use args::*;
 mod handler;
+mod ticker;
 mod types;
 use crate::handler::{Handler, HandlerArgs};
 

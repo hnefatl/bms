@@ -9,8 +9,6 @@ pub enum Error {
     Shutdown,
     #[error("{0}")]
     Other(#[from] anyhow::Error),
-    #[error("{0}")]
-    InvalidStateTransition(#[from] rust_fsm::TransitionImpossibleError),
 }
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -40,7 +38,7 @@ impl HandlerArgs {
 
 #[async_trait::async_trait]
 pub trait Handler {
-    async fn handle(&self, args: HandlerArgs) -> Result<()>;
+    async fn handle(&'static self, args: HandlerArgs) -> Result<()>;
 
     fn entities(&self) -> Vec<&dyn Entity>;
 }

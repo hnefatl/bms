@@ -15,6 +15,7 @@ rumqttc = "0.25"
 bytes = "1"
 regex = "1"
 tokio = { version = "1.53", features = ["rt-multi-thread", "signal"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-rust-fsm = { git = "https://github.com/hnefatl/rust-fsm", features = ["diagram"] }
+jiff = "1.0"
