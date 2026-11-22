@@ -4,21 +4,23 @@ use tokio_util::task::AbortOnDropHandle;
 
 use crate::{
     handler::HandlerArgs,
-    types::{Entity, IKEAShortcutButton, IKEAShortcutButtonAction},
+    types::{AqaraTemperatureSensor, Entity, IKEAShortcutButton, IKEAShortcutButtonAction},
 };
 
 const RESET_TIME: jiff::civil::Time = jiff::civil::Time::constant(2, 0, 0, 0);
 
-pub static HANDLER: Handler = Handler {
+pub static MEDICATION_REMINDER: MedicationReminder = MedicationReminder {
     state: Mutex::const_new(State {
         medication_taken: false,
     }),
     button: IKEAShortcutButton::new("zigbee2mqtt/medication_switch"),
+    bathroom_sensor: AqaraTemperatureSensor::new("zigbee2mqtt/bathroom"),
 };
 
-pub struct Handler {
+pub struct MedicationReminder {
     state: Mutex<State>,
     button: IKEAShortcutButton,
+    bathroom_sensor: AqaraTemperatureSensor,
 }
 #[derive(Debug)]
 pub struct State {
@@ -26,9 +28,9 @@ pub struct State {
 }
 
 #[async_trait::async_trait]
-impl crate::handler::Handler for Handler {
+impl crate::handler::Handler for MedicationReminder {
     fn entities(&self) -> Vec<&dyn Entity> {
-        vec![&self.button]
+        vec![&self.button, &self.bathroom_sensor]
     }
 
     async fn handle(&'static self, args: HandlerArgs) -> crate::handler::Result<()> {
@@ -41,20 +43,23 @@ impl crate::handler::Handler for Handler {
             }
         }));
 
+        // TODO: this is getting unwieldy: maybe neater to do callbacks/threads on entity events?
         loop {
-            let Some(e) = self.button.get_payload(args.recv().await?) else {
-                continue;
-            };
-            match e.action {
-                IKEAShortcutButtonAction::On => {
+            let p = args.recv().await?;
+            match self.button.get_payload(&p).map(|p| p.action) {
+                Some(IKEAShortcutButtonAction::On) => {
                     info!("Medication taken");
                     self.state.lock().await.medication_taken = true;
                 }
-                IKEAShortcutButtonAction::BrightnessMoveUp => {
+                Some(IKEAShortcutButtonAction::BrightnessMoveUp) => {
                     info!("Medication reminder unimplemented");
                 }
-                IKEAShortcutButtonAction::BrightnessStop => {}
+                _ => {}
             };
+            match self.bathroom_sensor.get_payload(&p) {
+                Some(s) => info!("Bathroom sensor: {:?}", s),
+                _ => {}
+            }
         }
     }
 }

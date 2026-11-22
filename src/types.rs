@@ -21,7 +21,7 @@ impl<Payload: DeserializeOwned> EntityImpl<Payload> {
     }
 
     /// Check if the topic matches, and parse the payload if so.
-    pub fn get_payload(&self, p: Publish) -> Option<Payload> {
+    pub fn get_payload(&self, p: &Publish) -> Option<Payload> {
         if p.topic != self.topic() {
             return None;
         }
@@ -41,11 +41,11 @@ impl<E: DeserializeOwned> Entity for EntityImpl<E> {
 }
 
 pub type IKEAShortcutButton = EntityImpl<IKEAShortcutButtonPayload>;
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct IKEAShortcutButtonPayload {
     pub action: IKEAShortcutButtonAction,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub enum IKEAShortcutButtonAction {
     #[serde(rename = "on")]
     On,
@@ -53,4 +53,12 @@ pub enum IKEAShortcutButtonAction {
     BrightnessMoveUp,
     #[serde(rename = "brightness_stop")]
     BrightnessStop,
+}
+
+pub type AqaraTemperatureSensor = EntityImpl<AqaraTemperatureSensorPayload>;
+#[derive(Deserialize, Debug)]
+pub struct AqaraTemperatureSensorPayload {
+    temperature: f32,
+    humidity: f32,
+    pressure: f32,
 }

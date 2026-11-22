@@ -16,7 +16,7 @@ mod handlers {
 }
 
 const HANDLERS: [&'static dyn Handler; 1] = [
-    &crate::handlers::medication::HANDLER,
+    &crate::handlers::medication::MEDICATION_REMINDER,
     //&crate::handlers::lights::HANDLER,
 ];
 
@@ -57,6 +57,7 @@ async fn main() -> anyhow::Result<()> {
     for handler in HANDLERS {
         // TODO: better failure mode here? fallible initial setup step?
         for entity in handler.entities() {
+            info!("Subscribing to {}", entity.topic());
             client
                 .subscribe(entity.topic(), QoS::AtLeastOnce)
                 .await
