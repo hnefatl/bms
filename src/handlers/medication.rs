@@ -1,22 +1,53 @@
-use rumqttc::QoS;
+use log::info;
+use rust_fsm::*;
+use tokio::sync::Mutex;
 
-use crate::handler::{HandlerArgs, Result};
+use crate::{
+    handler::HandlerArgs,
+    types::{Entity, IKEAShortcutButton, IKEAShortcutButtonAction},
+};
 
-pub const HANDLER: Handler = Handler {};
+pub static HANDLER: Handler = Handler {
+    machine: Mutex::const_new(medication::StateMachine::new()),
+    button: IKEAShortcutButton::new("zigbee2mqtt/medication_switch"),
+};
 
-pub struct Handler {}
+state_machine! {
+    #[derive(Debug)]
+    medication(MedsNotTaken)
+
+    MedsNotTaken(MedsTaken) => MedsTaken,
+    MedsTaken(MedsTaken) => MedsTaken,
+    MedsTaken(DayReset) => MedsNotTaken,
+}
+
+pub struct Handler {
+    machine: Mutex<medication::StateMachine>,
+    button: IKEAShortcutButton,
+}
+
 #[async_trait::async_trait]
 impl crate::handler::Handler for Handler {
-    async fn handle(&self, args: HandlerArgs) -> Result<()> {
-        // TODO: better failure mode here? fallible initial setup step?
-        args.client
-            .subscribe("zigbee2mqtt/medication_switch/action", QoS::AtLeastOnce)
-            .await
-            .unwrap();
-        loop {
-            let msg = args.recv_raw().await?;
+    fn entities(&self) -> Vec<&dyn Entity> {
+        vec![&self.button]
+    }
 
-            println!("{:?}", msg);
+    async fn handle(&self, args: HandlerArgs) -> crate::handler::Result<()> {
+        // TODO: ticker and chrono.
+        loop {
+            let Some(e) = self.button.get_payload(args.recv().await?) else {
+                continue;
+            };
+            let output = {
+                let mut machine = self.machine.lock().await;
+                match e.action {
+                    IKEAShortcutButtonAction::On => {
+                        info!("Medication taken");
+                        machine.consume(&medication::Input::MedsTaken)?
+                    }
+                    _ => None,
+                }
+            };
         }
     }
 }

@@ -1,20 +1,56 @@
-use bytes::Bytes;
+use log::error;
+use rumqttc::Publish;
+use serde::{Deserialize, de::DeserializeOwned};
+use std::marker::PhantomData;
 
-use log::trace;
-use serde::Deserialize;
+/// Represents an entity that has a topic and an associated event type.
+pub trait Entity {
+    fn topic(&self) -> &str;
+}
 
-#[derive(Deserialize, Debug)]
-#[serde(untagged)]
-pub enum Message {}
+pub struct EntityImpl<Payload: DeserializeOwned> {
+    p: PhantomData<Payload>,
+    topic: &'static str,
+}
+impl<Payload: DeserializeOwned> EntityImpl<Payload> {
+    pub const fn new(topic: &'static str) -> Self {
+        Self {
+            p: PhantomData,
+            topic,
+        }
+    }
 
-impl Message {
-    pub fn deserialize(data: Bytes) -> Result<Message, Bytes> {
-        match serde_json::from_slice(&data) {
-            Ok(m) => Ok(m),
+    /// Check if the topic matches, and parse the payload if so.
+    pub fn get_payload(&self, p: Publish) -> Option<Payload> {
+        if p.topic != self.topic() {
+            return None;
+        }
+        match serde_json::from_slice(&p.payload) {
+            Ok(e) => Some(e),
             Err(e) => {
-                trace!("failed to deserialize payload: {}", e);
-                Err(data)
+                error!("failed to deserialize payload ({}): {:?}", e, p.payload);
+                None
             }
         }
     }
+}
+impl<E: DeserializeOwned> Entity for EntityImpl<E> {
+    fn topic(&self) -> &str {
+        self.topic
+    }
+}
+
+pub type IKEAShortcutButton = EntityImpl<IKEAShortcutButtonPayload>;
+#[derive(Deserialize)]
+pub struct IKEAShortcutButtonPayload {
+    pub action: IKEAShortcutButtonAction,
+}
+#[derive(Deserialize)]
+pub enum IKEAShortcutButtonAction {
+    #[serde(rename = "on")]
+    On,
+    #[serde(rename = "brightness_move_up")]
+    BrightnessMoveUp,
+    #[serde(rename = "brightness_stop")]
+    BrightnessStop,
 }

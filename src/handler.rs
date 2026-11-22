@@ -1,8 +1,7 @@
 use async_channel::{Receiver, RecvError};
-use bytes::Bytes;
-use rumqttc::{AsyncClient, Event, Packet};
+use rumqttc::{AsyncClient, Event, Packet, Publish};
 
-use crate::types::Message;
+use crate::types::Entity;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -10,6 +9,8 @@ pub enum Error {
     Shutdown,
     #[error("{0}")]
     Other(#[from] anyhow::Error),
+    #[error("{0}")]
+    InvalidStateTransition(#[from] rust_fsm::TransitionImpossibleError),
 }
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -23,19 +24,12 @@ impl HandlerArgs {
         HandlerArgs { client, events }
     }
 
-    /// Receive an event from the queue, handling queue shutdown.
-    pub async fn recv(&self) -> Result<Message> {
-        loop {
-            if let Ok(m) = Message::deserialize(self.recv_raw().await?) {
-                return Ok(m);
-            }
-        }
-    }
-    pub async fn recv_raw(&self) -> Result<Bytes> {
+    /// Receive a publish from the queue, handling queue shutdown.
+    pub async fn recv(&self) -> Result<Publish> {
         loop {
             match self.events.recv().await {
                 Ok(Event::Incoming(Packet::Publish(p))) => {
-                    return Ok(p.payload);
+                    return Ok(p);
                 }
                 Ok(_) => {}
                 Err(RecvError) => return Err(Error::Shutdown),
@@ -47,4 +41,6 @@ impl HandlerArgs {
 #[async_trait::async_trait]
 pub trait Handler {
     async fn handle(&self, args: HandlerArgs) -> Result<()>;
+
+    fn entities(&self) -> Vec<&dyn Entity>;
 }
