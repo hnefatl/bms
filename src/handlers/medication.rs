@@ -47,7 +47,7 @@ impl MedicationReminder {
     }
 
     async fn handle_button_press(&self, args: HandlerArgs) -> anyhow::Result<()> {
-        let p = args.recv().await?;
+        let p = args.recv().await;
         match self.button.get_payload(&p).map(|p| p.action) {
             Some(IKEAShortcutButtonAction::On) => {
                 info!("Medication taken");

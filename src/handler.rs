@@ -5,13 +5,6 @@ use tokio::task::JoinSet;
 
 use crate::types::Entity;
 
-#[derive(thiserror::Error, Debug)]
-pub enum Error {
-    #[error("{0}")]
-    Other(#[from] anyhow::Error),
-}
-pub type Result<T> = core::result::Result<T, Error>;
-
 #[derive(Clone)]
 pub struct HandlerArgs {
     pub client: AsyncClient,
@@ -23,11 +16,11 @@ impl HandlerArgs {
     }
 
     /// Receive a publish from the queue, handling queue shutdown.
-    pub async fn recv(&self) -> Result<Publish> {
+    pub async fn recv(&self) -> Publish {
         loop {
             match self.events.recv().await {
                 Ok(Event::Incoming(Packet::Publish(p))) => {
-                    return Ok(p);
+                    return p;
                 }
                 Ok(_) => {}
                 // If the channel is closed, we're terminating.
