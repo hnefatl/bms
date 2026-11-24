@@ -1,12 +1,12 @@
 use async_channel::{Receiver, RecvError};
+use log::error;
 use rumqttc::{AsyncClient, Event, Packet, Publish};
+use tokio::task::JoinSet;
 
 use crate::types::Entity;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
-    #[error("graceful shutdown")]
-    Shutdown,
     #[error("{0}")]
     Other(#[from] anyhow::Error),
 }
@@ -30,15 +30,25 @@ impl HandlerArgs {
                     return Ok(p);
                 }
                 Ok(_) => {}
-                Err(RecvError) => return Err(Error::Shutdown),
+                // If the channel is closed, we're terminating.
+                // Wait ~indefinitely for this future to get aborted.
+                Err(RecvError) => std::future::pending().await,
             }
         }
     }
 }
 
-#[async_trait::async_trait]
 pub trait Handler {
-    async fn handle(&'static self, args: HandlerArgs) -> Result<()>;
-
     fn entities(&self) -> Vec<&dyn Entity>;
+
+    fn start(&'static self, tasks: &mut JoinSet<!>, args: HandlerArgs);
+}
+
+/// Run the given function until cancelled, printing errors and restarting.
+pub async fn loopable<T: Clone, F: AsyncFn(T) -> anyhow::Result<()>>(t: T, f: F) -> ! {
+    loop {
+        if let Err(e) = f(t.clone()).await {
+            error!("{}", e)
+        }
+    }
 }

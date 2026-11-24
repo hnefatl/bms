@@ -1,9 +1,8 @@
 use log::info;
-use tokio::sync::Mutex;
-use tokio_util::task::AbortOnDropHandle;
+use tokio::{sync::Mutex, task::JoinSet};
 
 use crate::{
-    handler::HandlerArgs,
+    handler::{HandlerArgs, loopable},
     types::{AqaraTemperatureSensor, Entity, IKEAShortcutButton, IKEAShortcutButtonAction},
 };
 
@@ -27,39 +26,42 @@ pub struct State {
     medication_taken: bool,
 }
 
-#[async_trait::async_trait]
 impl crate::handler::Handler for MedicationReminder {
     fn entities(&self) -> Vec<&dyn Entity> {
         vec![&self.button, &self.bathroom_sensor]
     }
 
-    async fn handle(&'static self, args: HandlerArgs) -> crate::handler::Result<()> {
-        let _handle = AbortOnDropHandle::new(tokio::spawn(async {
-            let ticker = crate::ticker::DailyTicker::new(RESET_TIME);
-            loop {
-                ticker.next().await;
-                info!("Medication state reset");
-                self.state.lock().await.medication_taken = false;
-            }
-        }));
-
-        // TODO: this is getting unwieldy: maybe neater to do callbacks/threads on entity events?
+    fn start(&'static self, tasks: &mut JoinSet<!>, args: HandlerArgs) {
+        tasks.spawn(self.handle_daily_reset());
+        tasks.spawn(loopable(args, |a| self.handle_button_press(a)));
+    }
+}
+impl MedicationReminder {
+    async fn handle_daily_reset(&self) -> ! {
+        let ticker = crate::ticker::DailyTicker::new(RESET_TIME);
         loop {
-            let p = args.recv().await?;
-            match self.button.get_payload(&p).map(|p| p.action) {
-                Some(IKEAShortcutButtonAction::On) => {
-                    info!("Medication taken");
-                    self.state.lock().await.medication_taken = true;
-                }
-                Some(IKEAShortcutButtonAction::BrightnessMoveUp) => {
-                    info!("Medication reminder unimplemented");
-                }
-                _ => {}
-            };
-            match self.bathroom_sensor.get_payload(&p) {
-                Some(s) => info!("Bathroom sensor: {:?}", s),
-                _ => {}
-            }
+            ticker.next().await;
+            info!("Medication state reset");
+            self.state.lock().await.medication_taken = false;
         }
+    }
+
+    async fn handle_button_press(&self, args: HandlerArgs) -> anyhow::Result<()> {
+        let p = args.recv().await?;
+        match self.button.get_payload(&p).map(|p| p.action) {
+            Some(IKEAShortcutButtonAction::On) => {
+                info!("Medication taken");
+                self.state.lock().await.medication_taken = true;
+            }
+            Some(IKEAShortcutButtonAction::BrightnessMoveUp) => {
+                info!("Medication reminder unimplemented");
+            }
+            _ => {}
+        };
+        match self.bathroom_sensor.get_payload(&p) {
+            Some(s) => info!("Bathroom sensor: {:?}", s),
+            _ => {}
+        }
+        Ok(())
     }
 }

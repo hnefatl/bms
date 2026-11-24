@@ -63,9 +63,8 @@ async fn main() -> anyhow::Result<()> {
                 .await
                 .unwrap();
         }
-        joinset.spawn(handler.handle(handler_args.clone()));
+        handler.start(&mut joinset, handler_args.clone());
     }
-    let watcher_handle = tokio::spawn(handler_watcher(joinset));
 
     loop {
         tokio::select! {
@@ -89,23 +88,10 @@ async fn main() -> anyhow::Result<()> {
             }
         }
     }
+    joinset.abort_all();
     info!("Waiting for handlers to terminate...");
-    if let Err(e) = watcher_handle.await {
-        error!("handler watcher failed to join: {}", e);
-    }
+    while let Some(Err(_)) = joinset.join_next().await {}
     Ok(())
-}
-
-async fn handler_watcher(mut joinset: JoinSet<handler::Result<()>>) {
-    while let Some(r) = joinset.join_next().await {
-        // TODO: restart failed handlers
-        match r {
-            Ok(Ok(())) => {}
-            Ok(Err(handler::Error::Shutdown)) => {}
-            Ok(Err(e)) => error!("handler failed: {}", e),
-            Err(e) => error!("handler failed to join: {}", e),
-        }
-    }
 }
 
 async fn sniffer(regex: regex::Regex, mut eventloop: EventLoop) {
