@@ -3,22 +3,22 @@ use log::error;
 use rumqttc::{AsyncClient, Event, Packet, Publish};
 use tokio::task::JoinSet;
 
-use crate::types::Entity;
+use crate::{homeassistant::HAClientBuilder, types::Entity};
 
 #[derive(Clone)]
 pub struct HandlerArgs {
-    pub client: AsyncClient,
-    events: Receiver<Event>,
+    pub mqtt_client: AsyncClient,
+    mqtt_events: Receiver<Event>,
 }
 impl HandlerArgs {
-    pub fn new(client: AsyncClient, events: Receiver<Event>) -> Self {
-        HandlerArgs { client, events }
+    pub fn new(mqtt_client: AsyncClient, mqtt_events: Receiver<Event>) -> Self {
+        HandlerArgs { mqtt_client, mqtt_events }
     }
 
     /// Receive a publish from the queue, handling queue shutdown.
     pub async fn recv(&self) -> Publish {
         loop {
-            match self.events.recv().await {
+            match self.mqtt_events.recv().await {
                 Ok(Event::Incoming(Packet::Publish(p))) => {
                     return p;
                 }
@@ -32,9 +32,9 @@ impl HandlerArgs {
 }
 
 pub trait Handler {
-    fn entities(&self) -> Vec<&dyn Entity>;
+    fn mqtt_entities(&self) -> Vec<&dyn Entity>;
 
-    fn start(&'static self, tasks: &mut JoinSet<!>, args: HandlerArgs);
+    fn start(&'static self, tasks: &mut JoinSet<!>, args: HandlerArgs, ha_client: &mut HAClientBuilder);
 }
 
 /// Run the given function until cancelled, printing errors and restarting.

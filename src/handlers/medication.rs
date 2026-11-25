@@ -1,8 +1,13 @@
+use hass_rs::HassEvent;
 use log::info;
-use tokio::{sync::Mutex, task::JoinSet};
+use tokio::{
+    sync::{Mutex, mpsc},
+    task::JoinSet,
+};
 
 use crate::{
     handler::{HandlerArgs, loopable},
+    homeassistant::HAClientBuilder,
     types::{AqaraTemperatureSensor, Entity, IKEAShortcutButton, IKEAShortcutButtonAction},
 };
 
@@ -27,13 +32,19 @@ pub struct State {
 }
 
 impl crate::handler::Handler for MedicationReminder {
-    fn entities(&self) -> Vec<&dyn Entity> {
+    fn mqtt_entities(&self) -> Vec<&dyn Entity> {
         vec![&self.button, &self.bathroom_sensor]
     }
 
-    fn start(&'static self, tasks: &mut JoinSet<!>, args: HandlerArgs) {
+    fn start(
+        &'static self,
+        tasks: &mut JoinSet<!>,
+        args: HandlerArgs,
+        ha_client: &mut HAClientBuilder,
+    ) {
         tasks.spawn(self.handle_daily_reset());
         tasks.spawn(loopable(args, |a| self.handle_button_press(a)));
+        tasks.spawn(self.handle_shower_state(ha_client.subscribe("input_boolean.shower_active")));
     }
 }
 impl MedicationReminder {
@@ -63,5 +74,12 @@ impl MedicationReminder {
             _ => {}
         }
         Ok(())
+    }
+
+    async fn handle_shower_state(&self, mut receiver: mpsc::Receiver<HassEvent>) -> ! {
+        while let Some(e) = receiver.recv().await {
+            info!("shower state: {:?}", e)
+        }
+        std::future::pending().await
     }
 }

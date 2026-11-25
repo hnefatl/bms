@@ -1,4 +1,4 @@
 /target
 /.direnv
 # Used during local dev
-/secret_password
+/secret*
